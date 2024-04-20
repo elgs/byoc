@@ -11,26 +11,29 @@ import (
 	"syscall"
 )
 
+const BUFFER_SIZE = 4096
+const CONN_POOL_SIZE = 1
+
 var brokerPublicHost *string
 var brokerAgentHost *string
-var brokerAgentPort *string
+var brokerAgentPort *uint64
 
+var agentPublicPort *uint64
 var agentBrokerHost *string
-var agentBrokerPort *string
+var agentBrokerPort *uint64
 var agentTargetAddress *string
 
-var connPool = make(chan net.Conn, 2)
-
-const BUFFER_SIZE = 4096
+var connPool = make(map[uint64]chan net.Conn, CONN_POOL_SIZE)
 
 func main() {
 	startBroker := flag.Bool("broker", false, "start broker")
 	brokerPublicHost = flag.String("public-host", "[::]", "broker's public host")
 	brokerAgentHost = flag.String("agent-host", "[::]", "broker's agent host")
-	brokerAgentPort = flag.String("agent-port", "18080", "broker's agent port")
+	brokerAgentPort = flag.Uint64("agent-port", 18080, "broker's agent port")
 
+	agentPublicPort = flag.Uint64("public-port", 0, "agent's public port, default for random port")
 	agentBrokerHost = flag.String("broker-host", "localhost", "agent's broker host")
-	agentBrokerPort = flag.String("broker-port", "18080", "agent's broker port")
+	agentBrokerPort = flag.Uint64("broker-port", 18080, "agent's broker port")
 	agentTargetAddress = flag.String("target-address", "", "agent's target address")
 
 	secret := flag.String("secret", "", "secret")
@@ -39,7 +42,6 @@ func main() {
 	secretChecksum := sha256.Sum256([]byte(*secret))
 	if *startBroker {
 		brokerForAgents(&secretChecksum)
-		brokerForClients(&secretChecksum)
 	} else {
 		agentToBroker(&secretChecksum)
 	}
@@ -69,7 +71,7 @@ func pipe(connLocal net.Conn, connDst net.Conn, bufSize int) {
 		if err != nil {
 			connLocal.Close()
 			connDst.Close()
-			log.Println("pipe is closed:", err)
+			// log.Println("pipe is closed:", err)
 			break
 		}
 		if n > 0 {

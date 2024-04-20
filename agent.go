@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
@@ -14,13 +15,14 @@ func agentToBroker(secretChecksum *[32]byte) {
 	}
 
 	for {
-		connBroker, err := net.Dial("tcp", fmt.Sprintf("%s:%s", *agentBrokerHost, *agentBrokerPort))
+		connBroker, err := net.Dial("tcp", fmt.Sprintf("%s:%d", *agentBrokerHost, *agentBrokerPort))
 		if err != nil {
 			connBroker.Close()
 			log.Println("agent to broker:", err)
 			return
 		}
 		connBroker.Write(secretChecksum[:])
+		binary.Write(connBroker, binary.LittleEndian, *agentPublicPort)
 		go func() {
 			s, err := readChecksumFromSocket(connBroker)
 			if err != nil {
@@ -35,7 +37,10 @@ func agentToBroker(secretChecksum *[32]byte) {
 				log.Println("possible attack detected")
 			}
 		}()
-		connPool <- connBroker
+		if connPool[*agentPublicPort] == nil {
+			connPool[*agentPublicPort] = make(chan net.Conn, CONN_POOL_SIZE)
+		}
+		connPool[*agentPublicPort] <- connBroker
 	}
 }
 
@@ -46,7 +51,10 @@ func agentToTarget() {
 		connServer.Close()
 		return
 	}
-	connBroker := <-connPool
+	if connPool[*agentPublicPort] == nil {
+		connPool[*agentPublicPort] = make(chan net.Conn, CONN_POOL_SIZE)
+	}
+	connBroker := <-connPool[*agentPublicPort]
 	go pipe(connBroker, connServer, BUFFER_SIZE)
 	go pipe(connServer, connBroker, BUFFER_SIZE)
 }
