@@ -11,11 +11,13 @@ import (
 	"syscall"
 )
 
-var addressBrokerForClients = "[::]:8080"
-var addressBrokerForAgents = "[::]:18080"
+var brokerPublicHost = "[::]"
+var brokerAgentHost = "[::]"
+var brokerAgentPort = "18080"
 
-var addressBroker = "localhost:18080"
-var addressServer = "localhost:4200"
+var agentBrokerHost = "localhost"
+var agentBrokerPort = "18080"
+var agentTargetAddress string
 
 var connPool = make(chan net.Conn, 2)
 
@@ -23,6 +25,14 @@ const BUFFER_SIZE = 4096
 
 func main() {
 	startBroker := flag.Bool("broker", false, "start broker")
+	brokerPublicHost = *flag.String("public-host", "[::]", "broker's public host")
+	brokerAgentHost = *flag.String("agent-host", "[::]", "broker's agent host")
+	brokerAgentPort = *flag.String("agent-port", "18080", "broker's agent port")
+
+	agentBrokerHost = *flag.String("broker-host", "localhost", "agent's broker host")
+	agentBrokerPort = *flag.String("broker-port", "18080", "agent's broker port")
+	agentTargetAddress = *flag.String("target-address", "localhost:4200", "agent's target address")
+
 	secret := flag.String("secret", "", "secret")
 	flag.Parse()
 

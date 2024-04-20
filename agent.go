@@ -1,13 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 )
 
 func agentToBroker(secretChecksum *[32]byte) {
 	for {
-		connBroker, err := net.Dial("tcp", addressBroker)
+		connBroker, err := net.Dial("tcp", fmt.Sprintf("%s:%s", agentBrokerHost, agentBrokerPort))
 		if err != nil {
 			connBroker.Close()
 			log.Println("agent to broker:", err)
@@ -22,7 +23,7 @@ func agentToBroker(secretChecksum *[32]byte) {
 				return
 			}
 			if s == string(secretChecksum[:]) {
-				agentToServer()
+				agentToTarget()
 			} else {
 				connBroker.Close()
 				log.Println("possible attack detected")
@@ -32,8 +33,8 @@ func agentToBroker(secretChecksum *[32]byte) {
 	}
 }
 
-func agentToServer() {
-	connServer, err := net.Dial("tcp", addressServer)
+func agentToTarget() {
+	connServer, err := net.Dial("tcp", agentTargetAddress)
 	if err != nil {
 		log.Println("agent to server:", err)
 		connServer.Close()
