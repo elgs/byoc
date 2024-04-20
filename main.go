@@ -22,8 +22,10 @@ var agentPublicPort *uint64
 var agentBrokerHost *string
 var agentBrokerPort *uint64
 var agentTargetAddress *string
+var agentState = 0 // 0: not initialized, 1: initializing, 2: initialized
 
-var connPool = make(map[uint64]chan net.Conn, CONN_POOL_SIZE)
+var agentConnPool = make(map[uint64]chan net.Conn, CONN_POOL_SIZE)
+var brokerConnPool = make(map[string]chan net.Conn, CONN_POOL_SIZE) // key: secret checksum | public port, no space in between
 
 func main() {
 	startBroker := flag.Bool("broker", false, "start broker")
@@ -31,7 +33,7 @@ func main() {
 	brokerAgentHost = flag.String("agent-host", "[::]", "broker's agent host")
 	brokerAgentPort = flag.Uint64("agent-port", 18080, "broker's agent port")
 
-	agentPublicPort = flag.Uint64("public-port", 0, "agent's public port, default for random port")
+	agentPublicPort = flag.Uint64("public-port", 0, "agent's public port, default for a random port")
 	agentBrokerHost = flag.String("broker-host", "localhost", "agent's broker host")
 	agentBrokerPort = flag.Uint64("broker-port", 18080, "agent's broker port")
 	agentTargetAddress = flag.String("target-address", "", "agent's target address")
