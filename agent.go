@@ -5,19 +5,27 @@ import (
 	"net"
 )
 
-func agentToBroker() {
+func agentToBroker(secretChecksum *[32]byte) {
 	for {
 		connBroker, err := net.Dial("tcp", addressBrokerForAgents)
 		if err != nil {
-			log.Println("agent to broker:", err)
 			connBroker.Close()
+			log.Println("agent to broker:", err)
 			return
 		}
+		connBroker.Write(secretChecksum[:])
 		go func() {
-			s := make([]byte, 5)
-			connBroker.Read(s)
-			if string(s) == "hello" {
+			s, err := readChecksumFromSocket(connBroker)
+			if err != nil {
+				connBroker.Close()
+				log.Println("agent to broker:", err)
+				return
+			}
+			if s == string(secretChecksum[:]) {
 				agentToServer()
+			} else {
+				connBroker.Close()
+				log.Println("possible attack detected")
 			}
 		}()
 		connPool <- connBroker

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"flag"
 	"log"
 	"net"
@@ -19,13 +20,15 @@ const BUFFER_SIZE = 4096
 
 func main() {
 	startBroker := flag.Bool("broker", false, "start broker")
+	secret := flag.String("secret", "", "secret")
 	flag.Parse()
 
+	secretChecksum := sha256.Sum256([]byte(*secret))
 	if *startBroker {
-		brokerForAgents()
-		brokerForClients()
+		brokerForAgents(&secretChecksum)
+		brokerForClients(&secretChecksum)
 	} else {
-		agentToBroker()
+		agentToBroker(&secretChecksum)
 	}
 	Hook(nil)
 }
@@ -66,4 +69,13 @@ func pipe(connLocal net.Conn, connDst net.Conn, bufSize int) {
 			}
 		}
 	}
+}
+
+func readChecksumFromSocket(conn net.Conn) (string, error) {
+	buf := make([]byte, 32)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return "", err
+	}
+	return string(buf[:n]), nil
 }

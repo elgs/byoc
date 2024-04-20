@@ -5,7 +5,7 @@ import (
 	"net"
 )
 
-func brokerForClients() {
+func brokerForClients(secretChecksum *[32]byte) {
 	listener, err := net.Listen("tcp", addressBrokerForClients)
 	if err != nil {
 		log.Println(err)
@@ -17,9 +17,10 @@ func brokerForClients() {
 				log.Println("broker for clients:", err)
 				continue
 			}
+			log.Println("client connected from ", connClient.RemoteAddr())
 			go func() {
 				connAgent := <-connPool
-				connAgent.Write([]byte("hello"))
+				connAgent.Write(secretChecksum[:])
 				go pipe(connClient, connAgent, BUFFER_SIZE)
 				go pipe(connAgent, connClient, BUFFER_SIZE)
 			}()
@@ -27,7 +28,7 @@ func brokerForClients() {
 	}()
 }
 
-func brokerForAgents() {
+func brokerForAgents(secretChecksum *[32]byte) {
 	listener, err := net.Listen("tcp", addressBrokerForAgents)
 	if err != nil {
 		log.Println(err)
@@ -37,6 +38,17 @@ func brokerForAgents() {
 			connAgent, err := listener.Accept()
 			if err != nil {
 				log.Println("broker for agents:", err)
+				continue
+			}
+			s, err := readChecksumFromSocket(connAgent)
+			if err != nil {
+				connAgent.Close()
+				log.Println("broker for agents:", err)
+				continue
+			}
+			if s != string(secretChecksum[:]) {
+				connAgent.Close()
+				log.Println("possible attack detected")
 				continue
 			}
 			log.Println("agent connected from ", connAgent.RemoteAddr())
