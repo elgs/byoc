@@ -7,8 +7,14 @@ import (
 )
 
 func agentToBroker(secretChecksum *[32]byte) {
+	if *agentTargetAddress == "" {
+		log.Println("agent target address is required")
+		log.Println("use -target-address flag")
+		return
+	}
+
 	for {
-		connBroker, err := net.Dial("tcp", fmt.Sprintf("%s:%s", agentBrokerHost, agentBrokerPort))
+		connBroker, err := net.Dial("tcp", fmt.Sprintf("%s:%s", *agentBrokerHost, *agentBrokerPort))
 		if err != nil {
 			connBroker.Close()
 			log.Println("agent to broker:", err)
@@ -34,7 +40,7 @@ func agentToBroker(secretChecksum *[32]byte) {
 }
 
 func agentToTarget() {
-	connServer, err := net.Dial("tcp", agentTargetAddress)
+	connServer, err := net.Dial("tcp", *agentTargetAddress)
 	if err != nil {
 		log.Println("agent to server:", err)
 		connServer.Close()

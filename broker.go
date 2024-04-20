@@ -7,7 +7,7 @@ import (
 )
 
 func brokerForClients(secretChecksum *[32]byte) {
-	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", brokerPublicHost, 8080))
+	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *brokerPublicHost, 8080))
 	if err != nil {
 		log.Println(err)
 	}
@@ -30,7 +30,7 @@ func brokerForClients(secretChecksum *[32]byte) {
 }
 
 func brokerForAgents(secretChecksum *[32]byte) {
-	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%s", brokerAgentHost, brokerAgentPort))
+	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%s", *brokerAgentHost, *brokerAgentPort))
 	if err != nil {
 		log.Println(err)
 	}
