@@ -7,7 +7,7 @@ import (
 
 func agentToBroker(secretChecksum *[32]byte) {
 	for {
-		connBroker, err := net.Dial("tcp", addressBrokerForAgents)
+		connBroker, err := net.Dial("tcp", addressBroker)
 		if err != nil {
 			connBroker.Close()
 			log.Println("agent to broker:", err)

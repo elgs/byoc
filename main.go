@@ -13,7 +13,10 @@ import (
 
 var addressBrokerForClients = "[::]:8080"
 var addressBrokerForAgents = "[::]:18080"
+
+var addressBroker = "localhost:18080"
 var addressServer = "localhost:4200"
+
 var connPool = make(chan net.Conn, 2)
 
 const BUFFER_SIZE = 4096
