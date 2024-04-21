@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"flag"
 	"log"
 	"net"
@@ -12,7 +13,8 @@ import (
 )
 
 const BUFFER_SIZE = 4096
-const CONN_POOL_SIZE = 1
+const CONN_POOL_SIZE = 5
+const DEFAULT_AGENT_BROKER_PORT = 18080
 
 var brokerPublicHost *string
 var brokerAgentHost *string
@@ -22,7 +24,6 @@ var agentPublicPort *uint64
 var agentBrokerHost *string
 var agentBrokerPort *uint64
 var agentTargetAddress *string
-var agentState = 0 // 0: not initialized, 1: initializing, 2: initialized
 
 var agentConnPool = make(map[uint64]chan net.Conn, CONN_POOL_SIZE)
 var brokerConnPool = make(map[string]chan net.Conn, CONN_POOL_SIZE) // key: secret checksum | public port, no space in between
@@ -31,11 +32,11 @@ func main() {
 	startBroker := flag.Bool("broker", false, "start broker")
 	brokerPublicHost = flag.String("public-host", "[::]", "broker's public host")
 	brokerAgentHost = flag.String("agent-host", "[::]", "broker's agent host")
-	brokerAgentPort = flag.Uint64("agent-port", 18080, "broker's agent port")
+	brokerAgentPort = flag.Uint64("agent-port", DEFAULT_AGENT_BROKER_PORT, "broker's agent port")
 
 	agentPublicPort = flag.Uint64("public-port", 0, "agent's public port, default for a random port")
 	agentBrokerHost = flag.String("broker-host", "localhost", "agent's broker host")
-	agentBrokerPort = flag.Uint64("broker-port", 18080, "agent's broker port")
+	agentBrokerPort = flag.Uint64("broker-port", DEFAULT_AGENT_BROKER_PORT, "agent's broker port")
 	agentTargetAddress = flag.String("target-address", "", "agent's target address")
 
 	secret := flag.String("secret", "", "secret")
@@ -88,11 +89,8 @@ func pipe(connLocal net.Conn, connDst net.Conn, bufSize int) {
 	}
 }
 
-func readChecksumFromSocket(conn net.Conn) (string, error) {
-	buf := make([]byte, 32)
-	n, err := conn.Read(buf)
-	if err != nil {
-		return "", err
-	}
-	return string(buf[:n]), nil
+func readChecksumFromSocket(conn net.Conn) ([32]byte, error) {
+	buf := [32]byte{}
+	err := binary.Read(conn, binary.LittleEndian, &buf)
+	return buf, err
 }

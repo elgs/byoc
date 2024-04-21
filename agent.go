@@ -1,11 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
-	"time"
 )
 
 func agentToBroker(secretChecksum *[32]byte) {
@@ -16,23 +16,13 @@ func agentToBroker(secretChecksum *[32]byte) {
 	}
 
 	for {
-		log.Println("agent state", agentState)
-		if agentState == 0 {
-			agentState = 1
-		} else if agentState == 1 {
-			log.Println("agent is being initialized")
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
 		connBroker, err := net.Dial("tcp", fmt.Sprintf("%s:%d", *agentBrokerHost, *agentBrokerPort))
 		if err != nil {
-			connBroker.Close()
 			log.Println("agent to broker:", err)
-			return
+			continue
 		}
 		// 1. agent sends secret checksum to broker - 32 bytes
-		connBroker.Write(secretChecksum[:])
+		binary.Write(connBroker, binary.LittleEndian, secretChecksum)
 		// 2. broker answers true or false
 		var checksumResult bool
 		binary.Read(connBroker, binary.LittleEndian, &checksumResult)
@@ -46,15 +36,26 @@ func agentToBroker(secretChecksum *[32]byte) {
 		binary.Write(connBroker, binary.LittleEndian, *agentPublicPort)
 		// 4. broker answers actual public port - 8 bytes
 		binary.Read(connBroker, binary.LittleEndian, agentPublicPort)
+
+		// 5. broker sends lenth of broker public host - 8 bytes
+		var publicHostLen uint64
+		binary.Read(connBroker, binary.LittleEndian, &publicHostLen)
+		// 6. broker sends broker public host
+		bs := make([]byte, publicHostLen)
+		binary.Read(connBroker, binary.LittleEndian, bs)
+		*brokerPublicHost = string(bs)
+		fmt.Println("public host:", *brokerPublicHost, "public port:", *agentPublicPort)
+
 		go func() {
-			// 5. agent receives secret checksum from broker to trigger agent to connect to target - 32 bytes
-			s, err := readChecksumFromSocket(connBroker)
+			// 50. agent receives secret checksum from broker to trigger agent to connect to target - 32 bytes
+			bs, err := readChecksumFromSocket(connBroker)
 			if err != nil {
+				<-agentConnPool[*agentPublicPort]
 				connBroker.Close()
 				log.Println("agent to broker:", err)
 				return
 			}
-			if s == string(secretChecksum[:]) {
+			if bytes.Equal(bs[:], secretChecksum[:]) {
 				agentToTarget()
 			} else {
 				connBroker.Close()
@@ -65,7 +66,6 @@ func agentToBroker(secretChecksum *[32]byte) {
 			agentConnPool[*agentPublicPort] = make(chan net.Conn, CONN_POOL_SIZE)
 		}
 		agentConnPool[*agentPublicPort] <- connBroker
-		agentState = 2
 	}
 }
 
@@ -73,7 +73,6 @@ func agentToTarget() {
 	connServer, err := net.Dial("tcp", *agentTargetAddress)
 	if err != nil {
 		log.Println("agent to server:", err)
-		connServer.Close()
 		return
 	}
 	if agentConnPool[*agentPublicPort] == nil {

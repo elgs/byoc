@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"log"
@@ -11,12 +12,16 @@ import (
 func brokerForPublic(secretChecksum *[32]byte, publicPort *uint64) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *brokerPublicHost, *publicPort))
 	if err != nil {
-		log.Println(err, *publicPort, "retrying in 5 seconds")
-		time.Sleep(5 * time.Second)
+		log.Println(err, *publicPort, "retrying in 1 seconds")
+		time.Sleep(1 * time.Second)
 		// generate a random port between 1024 and 65535
 		*publicPort = 1024 + uint64(time.Now().UnixNano())%64511
 		brokerForPublic(secretChecksum, publicPort)
 		return
+	}
+	cpKey := fmt.Sprintf("%x|%d", *secretChecksum, *publicPort)
+	if brokerConnPool[cpKey] == nil {
+		brokerConnPool[cpKey] = make(chan net.Conn, CONN_POOL_SIZE)
 	}
 	go func() {
 		for {
@@ -27,11 +32,10 @@ func brokerForPublic(secretChecksum *[32]byte, publicPort *uint64) {
 			}
 			log.Println("client connected from ", connClient.RemoteAddr())
 			go func() {
-				cpKey := fmt.Sprintf("%x%d", secretChecksum, *publicPort)
 				select {
 				case connAgent := <-brokerConnPool[cpKey]:
-					// 5. broker sends secret checksum to agent to trigger agent to connect to target - 32 bytes
-					connAgent.Write(secretChecksum[:])
+					// 50. broker sends secret checksum to agent to trigger agent to connect to target - 32 bytes
+					binary.Write(connAgent, binary.LittleEndian, secretChecksum)
 					go pipe(connClient, connAgent, BUFFER_SIZE)
 					go pipe(connAgent, connClient, BUFFER_SIZE)
 				case <-time.After(5 * time.Second):
@@ -57,13 +61,13 @@ func brokerForAgents(secretChecksum *[32]byte) {
 		}
 		go func() {
 			// 1. broker receives secret checksum from agent - 32 bytes
-			s, err := readChecksumFromSocket(connAgent)
+			bs, err := readChecksumFromSocket(connAgent)
 			if err != nil {
 				connAgent.Close()
 				log.Println("broker for agents:", err)
 				return
 			}
-			if s != string(secretChecksum[:]) {
+			if !bytes.Equal(bs[:], secretChecksum[:]) {
 				// 2. broker answers true or false
 				binary.Write(connAgent, binary.LittleEndian, false)
 				connAgent.Close()
@@ -83,13 +87,24 @@ func brokerForAgents(secretChecksum *[32]byte) {
 			}
 			log.Println("agent connected from ", connAgent.RemoteAddr())
 
-			cpKey := fmt.Sprintf("%x%d", secretChecksum, publicPort)
+			if publicPort == 0 {
+				// generate a random port between 1024 and 65535
+				publicPort = 1024 + uint64(time.Now().UnixNano())%64511
+			}
+
+			cpKey := fmt.Sprintf("%x|%d", bs, publicPort)
 			if brokerConnPool[cpKey] == nil {
-				brokerConnPool[cpKey] = make(chan net.Conn, CONN_POOL_SIZE)
-				brokerForPublic(secretChecksum, &publicPort)
+				brokerForPublic(&bs, &publicPort)
 			}
 			// 4. broker answers actual public port - 8 bytes
 			binary.Write(connAgent, binary.LittleEndian, publicPort)
+			// 5. broker sends lenth of broker public host - 8 bytes
+			publicHostLen := uint64(len(*brokerPublicHost))
+			binary.Write(connAgent, binary.LittleEndian, publicHostLen)
+			// 6. broker sends broker public host
+			binary.Write(connAgent, binary.LittleEndian, []byte(*brokerPublicHost))
+
+			cpKey = fmt.Sprintf("%x|%d", bs, publicPort)
 			brokerConnPool[cpKey] <- connAgent
 		}()
 	}
@@ -100,5 +115,7 @@ func brokerForAgents(secretChecksum *[32]byte) {
 	2. broker answers true or false
 	3. agent sends suggested public port to broker - 8 bytes
 	4. broker answers actual public port - 8 bytes
-	5. broker sends secret checksum to agent to trigger agent to connect to target - 32 bytes
+	5. broker sends lenth of broker public host - 8 bytes
+	6. broker sends broker public host
+	50. broker sends secret checksum to agent to trigger agent to connect to target - 32 bytes
 */
