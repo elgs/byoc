@@ -15,7 +15,7 @@ func brokerForPublic(secretChecksum *[32]byte, publicPort *uint64) {
 		log.Println(err, *publicPort, "retrying in 1 seconds")
 		time.Sleep(1 * time.Second)
 		// generate a random port between 1024 and 65535
-		*publicPort = 1024 + uint64(time.Now().UnixNano())%64511
+		*publicPort = getRandomPort()
 		brokerForPublic(secretChecksum, publicPort)
 		return
 	}
@@ -75,7 +75,12 @@ func brokerForAgents(secretChecksum *[32]byte) {
 				return
 			}
 			// 2. broker answers true or false
-			binary.Write(connAgent, binary.LittleEndian, true)
+			err = binary.Write(connAgent, binary.LittleEndian, true)
+			if err != nil {
+				connAgent.Close()
+				log.Println("broker for agents:", err)
+				return
+			}
 
 			// 3. broker receives suggested public port from agent - 8 bytes
 			var publicPort uint64
@@ -89,20 +94,37 @@ func brokerForAgents(secretChecksum *[32]byte) {
 
 			if publicPort == 0 {
 				// generate a random port between 1024 and 65535
-				publicPort = 1024 + uint64(time.Now().UnixNano())%64511
+				publicPort = getRandomPort()
 			}
 
 			cpKey := fmt.Sprintf("%x|%d", bs, publicPort)
+			mu.Lock()
 			if brokerConnPool[cpKey] == nil {
 				brokerForPublic(&bs, &publicPort)
 			}
+			mu.Unlock()
 			// 4. broker answers actual public port - 8 bytes
-			binary.Write(connAgent, binary.LittleEndian, publicPort)
+			err = binary.Write(connAgent, binary.LittleEndian, publicPort)
+			if err != nil {
+				connAgent.Close()
+				log.Println("broker for agents:", err)
+				return
+			}
 			// 5. broker sends lenth of broker public host - 8 bytes
 			publicHostLen := uint64(len(*brokerPublicHost))
-			binary.Write(connAgent, binary.LittleEndian, publicHostLen)
+			err = binary.Write(connAgent, binary.LittleEndian, publicHostLen)
+			if err != nil {
+				connAgent.Close()
+				log.Println("broker for agents:", err)
+				return
+			}
 			// 6. broker sends broker public host
-			binary.Write(connAgent, binary.LittleEndian, []byte(*brokerPublicHost))
+			err = binary.Write(connAgent, binary.LittleEndian, []byte(*brokerPublicHost))
+			if err != nil {
+				connAgent.Close()
+				log.Println("broker for agents:", err)
+				return
+			}
 
 			cpKey = fmt.Sprintf("%x|%d", bs, publicPort)
 			brokerConnPool[cpKey] <- connAgent

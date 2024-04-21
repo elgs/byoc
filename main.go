@@ -9,11 +9,13 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"sync"
 	"syscall"
+	"time"
 )
 
 const BUFFER_SIZE = 4096
-const CONN_POOL_SIZE = 5
+const CONN_POOL_SIZE = 2
 const DEFAULT_AGENT_BROKER_PORT = 18080
 
 var brokerPublicHost *string
@@ -27,6 +29,8 @@ var agentTargetAddress *string
 
 var agentConnPool = make(map[uint64]chan net.Conn, CONN_POOL_SIZE)
 var brokerConnPool = make(map[string]chan net.Conn, CONN_POOL_SIZE) // key: secret checksum | public port, no space in between
+
+var mu = sync.Mutex{}
 
 func main() {
 	startBroker := flag.Bool("broker", false, "start broker")
@@ -93,4 +97,8 @@ func readChecksumFromSocket(conn net.Conn) ([32]byte, error) {
 	buf := [32]byte{}
 	err := binary.Read(conn, binary.LittleEndian, &buf)
 	return buf, err
+}
+
+func getRandomPort() uint64 {
+	return 1024 + uint64(time.Now().UnixNano())%64511
 }

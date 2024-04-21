@@ -22,10 +22,20 @@ func agentToBroker(secretChecksum *[32]byte) {
 			continue
 		}
 		// 1. agent sends secret checksum to broker - 32 bytes
-		binary.Write(connBroker, binary.LittleEndian, secretChecksum)
+		err = binary.Write(connBroker, binary.LittleEndian, secretChecksum)
+		if err != nil {
+			connBroker.Close()
+			log.Println("agent to broker:", err)
+			continue
+		}
 		// 2. broker answers true or false
 		var checksumResult bool
-		binary.Read(connBroker, binary.LittleEndian, &checksumResult)
+		err = binary.Read(connBroker, binary.LittleEndian, &checksumResult)
+		if err != nil {
+			connBroker.Close()
+			log.Println("agent to broker:", err)
+			continue
+		}
 		if !checksumResult {
 			connBroker.Close()
 			log.Println("failed to authenticate with broker")
@@ -33,18 +43,39 @@ func agentToBroker(secretChecksum *[32]byte) {
 		}
 
 		// 3. agent sends suggested public port to broker - 8 bytes
-		binary.Write(connBroker, binary.LittleEndian, *agentPublicPort)
+		err = binary.Write(connBroker, binary.LittleEndian, *agentPublicPort)
+		if err != nil {
+			connBroker.Close()
+			log.Println("agent to broker:", err)
+			continue
+		}
 		// 4. broker answers actual public port - 8 bytes
-		binary.Read(connBroker, binary.LittleEndian, agentPublicPort)
+		err = binary.Read(connBroker, binary.LittleEndian, agentPublicPort)
+		if err != nil {
+			connBroker.Close()
+			log.Println("agent to broker:", err)
+			continue
+		}
 
 		// 5. broker sends lenth of broker public host - 8 bytes
 		var publicHostLen uint64
-		binary.Read(connBroker, binary.LittleEndian, &publicHostLen)
+		err = binary.Read(connBroker, binary.LittleEndian, &publicHostLen)
+		if err != nil {
+			connBroker.Close()
+			log.Println("agent to broker:", err)
+			continue
+		}
 		// 6. broker sends broker public host
 		bs := make([]byte, publicHostLen)
-		binary.Read(connBroker, binary.LittleEndian, bs)
+		err = binary.Read(connBroker, binary.LittleEndian, bs)
+		if err != nil {
+			connBroker.Close()
+			log.Println("agent to broker:", err)
+			continue
+		}
 		*brokerPublicHost = string(bs)
-		fmt.Println("public host:", *brokerPublicHost, "public port:", *agentPublicPort)
+		publicAddress := fmt.Sprintf("%s:%d", *brokerPublicHost, *agentPublicPort)
+		fmt.Println("public address:", publicAddress)
 
 		go func() {
 			// 50. agent receives secret checksum from broker to trigger agent to connect to target - 32 bytes
@@ -62,9 +93,11 @@ func agentToBroker(secretChecksum *[32]byte) {
 				log.Println("possible attack detected")
 			}
 		}()
+		mu.Lock()
 		if agentConnPool[*agentPublicPort] == nil {
 			agentConnPool[*agentPublicPort] = make(chan net.Conn, CONN_POOL_SIZE)
 		}
+		mu.Unlock()
 		agentConnPool[*agentPublicPort] <- connBroker
 	}
 }
