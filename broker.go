@@ -20,9 +20,11 @@ func brokerForPublic(secretChecksum *[32]byte, publicPort *uint64) {
 		return
 	}
 	cpKey := fmt.Sprintf("%x|%d", *secretChecksum, *publicPort)
+	mu.Lock()
 	if brokerConnPool[cpKey] == nil {
 		brokerConnPool[cpKey] = make(chan net.Conn, CONN_POOL_SIZE)
 	}
+	mu.Unlock()
 	go func() {
 		for {
 			connClient, err := listener.Accept()
@@ -98,11 +100,9 @@ func brokerForAgents(secretChecksum *[32]byte) {
 			}
 
 			cpKey := fmt.Sprintf("%x|%d", bs, publicPort)
-			mu.Lock()
 			if brokerConnPool[cpKey] == nil {
 				brokerForPublic(&bs, &publicPort)
 			}
-			mu.Unlock()
 			// 4. broker answers actual public port - 8 bytes
 			err = binary.Write(connAgent, binary.LittleEndian, publicPort)
 			if err != nil {
@@ -127,7 +127,10 @@ func brokerForAgents(secretChecksum *[32]byte) {
 			}
 
 			cpKey = fmt.Sprintf("%x|%d", bs, publicPort)
-			brokerConnPool[cpKey] <- connAgent
+			mu.Lock()
+			channel := brokerConnPool[cpKey]
+			mu.Unlock()
+			channel <- connAgent
 		}()
 	}
 }

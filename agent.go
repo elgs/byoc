@@ -57,6 +57,8 @@ func agentToBroker(secretChecksum *[32]byte) {
 			continue
 		}
 
+		publicPort := *agentPublicPort
+
 		// 5. broker sends lenth of broker public host - 8 bytes
 		var publicHostLen uint64
 		err = binary.Read(connBroker, binary.LittleEndian, &publicHostLen)
@@ -75,7 +77,17 @@ func agentToBroker(secretChecksum *[32]byte) {
 		}
 		*brokerPublicHost = string(bs)
 		publicAddress := fmt.Sprintf("%s:%d", *brokerPublicHost, *agentPublicPort)
-		fmt.Println("public address:", publicAddress)
+
+		if agentState == 0 {
+			fmt.Println("public address:", publicAddress)
+			agentState = 1
+		}
+
+		mu.Lock()
+		if agentConnPool[*agentPublicPort] == nil {
+			agentConnPool[*agentPublicPort] = make(chan net.Conn, CONN_POOL_SIZE)
+		}
+		mu.Unlock()
 
 		go func() {
 			// 50. agent receives secret checksum from broker to trigger agent to connect to target - 32 bytes
@@ -87,31 +99,23 @@ func agentToBroker(secretChecksum *[32]byte) {
 				return
 			}
 			if bytes.Equal(bs[:], secretChecksum[:]) {
-				agentToTarget()
+				agentToTarget(publicPort)
 			} else {
 				connBroker.Close()
 				log.Println("possible attack detected")
 			}
 		}()
-		mu.Lock()
-		if agentConnPool[*agentPublicPort] == nil {
-			agentConnPool[*agentPublicPort] = make(chan net.Conn, CONN_POOL_SIZE)
-		}
-		mu.Unlock()
 		agentConnPool[*agentPublicPort] <- connBroker
 	}
 }
 
-func agentToTarget() {
+func agentToTarget(publicPort uint64) {
 	connServer, err := net.Dial("tcp", *agentTargetAddress)
 	if err != nil {
 		log.Println("agent to server:", err)
 		return
 	}
-	if agentConnPool[*agentPublicPort] == nil {
-		agentConnPool[*agentPublicPort] = make(chan net.Conn, CONN_POOL_SIZE)
-	}
-	connBroker := <-agentConnPool[*agentPublicPort]
+	connBroker := <-agentConnPool[publicPort]
 	go pipe(connBroker, connServer, BUFFER_SIZE)
 	go pipe(connServer, connBroker, BUFFER_SIZE)
 }

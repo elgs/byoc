@@ -32,6 +32,8 @@ var brokerConnPool = make(map[string]chan net.Conn, CONN_POOL_SIZE) // key: secr
 
 var mu = sync.Mutex{}
 
+var agentState = 0 // 0: not initialized, 1: initialized
+
 func main() {
 	startBroker := flag.Bool("broker", false, "start broker")
 	brokerPublicHost = flag.String("public-host", "[::]", "broker's public host")
