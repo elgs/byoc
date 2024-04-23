@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func brokerForPublic(secretChecksum *[32]byte, publicPort *uint64) {
+func brokerForPublic(secretChecksum *[32]byte, publicPort *int64) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *brokerPublicHost, *publicPort))
 	if err != nil {
 		log.Println(err, *publicPort, "retrying in 1 seconds")
@@ -30,7 +30,7 @@ func brokerForPublic(secretChecksum *[32]byte, publicPort *uint64) {
 			connClient, err := listener.Accept()
 			if err != nil {
 				log.Println("broker for clients:", err)
-				continue
+				break
 			}
 			log.Println("client connected from ", connClient.RemoteAddr())
 			go func() {
@@ -42,6 +42,7 @@ func brokerForPublic(secretChecksum *[32]byte, publicPort *uint64) {
 					go pipe(connAgent, connClient, BUFFER_SIZE)
 				case <-time.After(5 * time.Second):
 					connClient.Close()
+					listener.Close()
 					log.Println("no agent available")
 				}
 			}()
@@ -85,7 +86,7 @@ func brokerForAgents(secretChecksum *[32]byte) {
 			}
 
 			// 3. broker receives suggested public port from agent - 8 bytes
-			var publicPort uint64
+			var publicPort int64
 			err = binary.Read(connAgent, binary.LittleEndian, &publicPort)
 			if err != nil {
 				connAgent.Close()
@@ -99,34 +100,33 @@ func brokerForAgents(secretChecksum *[32]byte) {
 				publicPort = getRandomPort()
 			}
 
+			if publicPort < 0 {
+				publicPort = -publicPort
+				brokerForPublic(&bs, &publicPort) //////////////////////////////////////////
+				// 4. broker answers actual public port - 8 bytes
+				err = binary.Write(connAgent, binary.LittleEndian, publicPort)
+				if err != nil {
+					connAgent.Close()
+					log.Println("broker for agents:", err)
+					return
+				}
+				// 5. broker sends lenth of broker public host - 8 bytes
+				publicHostLen := uint64(len(*brokerPublicHost))
+				err = binary.Write(connAgent, binary.LittleEndian, publicHostLen)
+				if err != nil {
+					connAgent.Close()
+					log.Println("broker for agents:", err)
+					return
+				}
+				// 6. broker sends broker public host
+				err = binary.Write(connAgent, binary.LittleEndian, []byte(*brokerPublicHost))
+				if err != nil {
+					connAgent.Close()
+					log.Println("broker for agents:", err)
+					return
+				}
+			}
 			cpKey := fmt.Sprintf("%x|%d", bs, publicPort)
-			if brokerConnPool[cpKey] == nil {
-				brokerForPublic(&bs, &publicPort)
-			}
-			// 4. broker answers actual public port - 8 bytes
-			err = binary.Write(connAgent, binary.LittleEndian, publicPort)
-			if err != nil {
-				connAgent.Close()
-				log.Println("broker for agents:", err)
-				return
-			}
-			// 5. broker sends lenth of broker public host - 8 bytes
-			publicHostLen := uint64(len(*brokerPublicHost))
-			err = binary.Write(connAgent, binary.LittleEndian, publicHostLen)
-			if err != nil {
-				connAgent.Close()
-				log.Println("broker for agents:", err)
-				return
-			}
-			// 6. broker sends broker public host
-			err = binary.Write(connAgent, binary.LittleEndian, []byte(*brokerPublicHost))
-			if err != nil {
-				connAgent.Close()
-				log.Println("broker for agents:", err)
-				return
-			}
-
-			cpKey = fmt.Sprintf("%x|%d", bs, publicPort)
 			mu.Lock()
 			channel := brokerConnPool[cpKey]
 			mu.Unlock()
@@ -138,7 +138,7 @@ func brokerForAgents(secretChecksum *[32]byte) {
 /**
   1. agent sends secret checksum to broker - 32 bytes
 	2. broker answers true or false
-	3. agent sends suggested public port to broker - 8 bytes
+	3. agent sends suggested public port to broker, a negative number for suggestion, a positive number to skip to after 6. - 8 bytes
 	4. broker answers actual public port - 8 bytes
 	5. broker sends lenth of broker public host - 8 bytes
 	6. broker sends broker public host

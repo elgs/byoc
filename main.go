@@ -22,13 +22,13 @@ var brokerPublicHost *string
 var brokerAgentHost *string
 var brokerAgentPort *uint64
 
-var agentPublicPort *uint64
+var agentPublicPort *int64
 var agentBrokerHost *string
 var agentBrokerPort *uint64
 var agentTargetAddress *string
 
-var agentConnPool = make(map[uint64]chan net.Conn, CONN_POOL_SIZE)
-var brokerConnPool = make(map[string]chan net.Conn, CONN_POOL_SIZE) // key: secret checksum | public port, no space in between
+var agentConnPool = make(map[int64]chan net.Conn)
+var brokerConnPool = make(map[string]chan net.Conn) // key: secret checksum | public port, no space in between
 
 var mu = sync.Mutex{}
 
@@ -40,7 +40,7 @@ func main() {
 	brokerAgentHost = flag.String("agent-host", "[::]", "broker's agent host")
 	brokerAgentPort = flag.Uint64("agent-port", DEFAULT_AGENT_BROKER_PORT, "broker's agent port")
 
-	agentPublicPort = flag.Uint64("public-port", 0, "agent's public port, default for a random port")
+	agentPublicPort = flag.Int64("public-port", 0, "agent's public port, default for a random port")
 	agentBrokerHost = flag.String("broker-host", "localhost", "agent's broker host")
 	agentBrokerPort = flag.Uint64("broker-port", DEFAULT_AGENT_BROKER_PORT, "agent's broker port")
 	agentTargetAddress = flag.String("target-address", "", "agent's target address")
@@ -101,6 +101,6 @@ func readChecksumFromSocket(conn net.Conn) ([32]byte, error) {
 	return buf, err
 }
 
-func getRandomPort() uint64 {
-	return 1024 + uint64(time.Now().UnixNano())%64511
+func getRandomPort() int64 {
+	return 1024 + time.Now().UnixNano()%64511
 }
